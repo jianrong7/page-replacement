@@ -1,0 +1,6 @@
+@page_replacement_HostAddress = http://localhost:5028
+
+GET {{page_replacement_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
