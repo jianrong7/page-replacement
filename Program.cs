@@ -1,5 +1,5 @@
 // using Microsoft.EntityFrameworkCore;
-using PageReplacement.Models;
+// using PageReplacement.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -22,7 +22,10 @@ app.UseHttpsRedirection();
 /*
 input: list of frame numbers, number of frames
 output: [number of frames * list of each time], total number of page faults
-[2,3,2,1,5,2,4,5,3,2,5,2], 3
+{
+  "incomingFrames": [2,3,2,1,5,2,4,5,3,2,5,2],
+  "numberOfFrames": 3
+}
 */
 
 app.MapPost(
@@ -123,38 +126,120 @@ app.MapPost(
     }
 );
 
-app.MapPost(
-    "/fifo",
-    (List<int> incomingFrames, int numberOfFrames) =>
-    {
-        var frames = new Dictionary<int, int>();
-        var pageFaults = 0;
-        var nextToRemove = 0;
+app.MapPost("/fifo", Fifo);
+app.MapPost("/lru", Lru);
 
-        for (int i = 0; i < numberOfFrames; i++)
+// OPT, LRU, CLOCK
+app.Run();
+
+static Result Fifo(Input input)
+{
+    var frames = new Dictionary<int, int>();
+    var nextToRemove = 0;
+
+    var pageFaults = new List<bool>();
+    var pageFaultsCount = 0;
+    var result = new Dictionary<int, List<int>>();
+
+    for (int i = 0; i < input.NumberOfFrames; i++)
+    {
+        // (frame, next use time). (-1, -1) means frame is empty and that next use time is infinity
+        frames.Add(i, -1);
+        result.Add(i, new List<int>());
+    }
+
+    for (int i = 0; i < input.IncomingFrames.Count; i++)
+    {
+        var f = input.IncomingFrames[i];
+        // already in frames, no page fault
+        if (frames.ContainsValue(f))
         {
-            // (frame, next use time). (-1, -1) means frame is empty and that next use time is infinity
-            frames.Add(i, -1);
+            pageFaults.Add(false);
+            continue;
+        }
+        else
+        { // not in frames, page fault
+            pageFaults.Add(true);
+            pageFaultsCount++;
+            frames[nextToRemove] = f;
+            nextToRemove = (nextToRemove + 1) % input.NumberOfFrames;
         }
 
-        for (int i = 0; i < incomingFrames.Count; i++)
+        for (int j = 0; j < input.NumberOfFrames; j++)
         {
-            var f = incomingFrames[i];
-            // already in frames, no page fault
-            if (frames.ContainsValue(f))
+            result[j].Add(frames[j]);
+        }
+    }
+
+    return new Result(pageFaults, pageFaultsCount, result);
+}
+
+static Result Lru(Input input)
+{
+    var frames = new Dictionary<int, int>();
+    var stack = new List<int>();
+
+    var pageFaults = new List<bool>();
+    var pageFaultsCount = 0;
+    var result = new Dictionary<int, List<int>>();
+
+    for (int i = 0; i < input.NumberOfFrames; i++)
+    {
+        // (frame, next use time). (-1, -1) means frame is empty and that next use time is infinity
+        frames.Add(i, -1);
+        result.Add(i, new List<int>());
+    }
+
+    for (int i = 0; i < input.IncomingFrames.Count; i++)
+    {
+        // check if stack contains frame
+        var foundIndex = stack.FindIndex(x => x == input.IncomingFrames[i]);
+        if (foundIndex != -1)
+        {
+            // if it does, remove it from stack and add it to the top of the stack
+            // remove from stack and add to the top
+            stack.RemoveAt(foundIndex);
+            stack.Add(input.IncomingFrames[i]);
+            pageFaults.Add(false);
+        }
+        else
+        {
+            // if it does not, remove the page from the bottom of the stack and append to the top
+            // remove from the bottom of the stack and append to the top
+            if (stack.Count == input.NumberOfFrames)
             {
-                continue;
+                var itemToRemove = stack[0];
+                for (int j = 0; j < input.NumberOfFrames; j++)
+                {
+                    if (frames[j] == itemToRemove)
+                    {
+                        frames[j] = input.IncomingFrames[i];
+                        break;
+                    }
+                }
+                stack.RemoveAt(0);
             }
             else
-            { // not in frames, page fault
-                pageFaults++;
-                frames[nextToRemove] = f;
-                nextToRemove = (nextToRemove + 1) % numberOfFrames;
+            {
+                for (int j = 0; j < input.NumberOfFrames; j++)
+                {
+                    if (frames[j] == -1)
+                    {
+                        frames[j] = input.IncomingFrames[i];
+                        break;
+                    }
+                }
             }
+            stack.Add(input.IncomingFrames[i]);
+            pageFaults.Add(true);
+            pageFaultsCount++;
         }
 
-        return pageFaults;
+        for (int j = 0; j < input.NumberOfFrames; j++)
+        {
+            result[j].Add(frames[j]);
+        }
     }
-);
 
-app.Run();
+    return new Result(pageFaults, pageFaultsCount, result);
+}
