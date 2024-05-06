@@ -1,12 +1,26 @@
 // using Microsoft.EntityFrameworkCore;
 // using PageReplacement.Models;
 
+var MyAllowSpecificOrigins = "_myAllowSpecificOrigins";
+
 var builder = WebApplication.CreateBuilder(args);
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
 
 // Add services to the container.
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy(
+        name: MyAllowSpecificOrigins,
+        builder =>
+        {
+            builder.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader();
+        }
+    );
+});
 
 var app = builder.Build();
 
@@ -17,12 +31,13 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+// app.UseHttpsRedirection();
 
 /*
 input: list of frame numbers, number of frames
 output: [number of frames * list of each time], total number of page faults
 */
+app.UseCors(MyAllowSpecificOrigins);
 
 app.MapPost("/opt", Opt);
 app.MapPost("/fifo", Fifo);
