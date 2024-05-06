@@ -128,6 +128,7 @@ app.MapPost(
 
 app.MapPost("/fifo", Fifo);
 app.MapPost("/lru", Lru);
+app.MapPost("/clock", Clock);
 
 // OPT, LRU, CLOCK
 app.Run();
@@ -238,6 +239,87 @@ static Result Lru(Input input)
         for (int j = 0; j < input.NumberOfFrames; j++)
         {
             result[j].Add(frames[j]);
+        }
+    }
+
+    return new Result(pageFaults, pageFaultsCount, result);
+}
+
+static Result Clock(Input input)
+{
+    var frames = new Dictionary<int, (int, int)>();
+    var victim = 0;
+
+    var pageFaults = new List<bool>();
+    var pageFaultsCount = 0;
+    var result = new Dictionary<int, List<List<int>>>();
+
+    for (int i = 0; i < input.NumberOfFrames; i++)
+    {
+        frames.Add(i, (-1, 0));
+    }
+
+    for (int i = 0; i < input.IncomingFrames.Count; i++)
+    {
+        var f = input.IncomingFrames[i];
+        // check if frames contain frame
+        if (frames.ContainsValue((f, 0)) || frames.ContainsValue((f, 1)))
+        {
+            // if it contains frame, do nothing but make sure ref bit is increased to 1
+            for (int j = 0; j < input.NumberOfFrames; j++)
+            {
+                if (frames[j].Item1 == f)
+                {
+                    frames[j] = (f, 1);
+                    break;
+                }
+            }
+            pageFaults.Add(false);
+        }
+        else
+        {
+            pageFaults.Add(true);
+            pageFaultsCount++;
+            bool inserted = false;
+            // if not, check if there is an empty frame
+            for (int j = 0; j < input.NumberOfFrames; j++)
+            {
+                if (frames[j].Item1 == -1)
+                {
+                    // if there is, insert frame into empty frame
+                    frames[j] = (f, 0);
+                    inserted = true;
+                    break;
+                }
+            }
+            // if not, check if there is a frame with ref bit 0 and replace
+            if (!inserted)
+            {
+                while (true)
+                {
+                    var victimFrame = victim % input.NumberOfFrames;
+                    if (frames[victimFrame].Item2 == 0)
+                    {
+                        frames[victimFrame] = (f, 0);
+                        victim++;
+                        break;
+                    }
+                    else
+                    {
+                        frames[victimFrame] = (frames[victimFrame].Item1, 0);
+                        victim++;
+                    }
+                }
+            }
+        }
+
+        for (int j = 0; j < input.NumberOfFrames; j++)
+        {
+            if (!result.ContainsKey(j))
+            {
+                result.Add(j, new List<List<int>>());
+            }
+            result[j].Add(new List<int> { frames[j].Item1, frames[j].Item2 });
         }
     }
 
